@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Bo khung dashboard PreMVP dieu phoi va theo doi doi xe.">
+    <title>Fleet PreMVP — Điều phối đội xe</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">ET4711 · BẢN NỀN PREMVP</p>
+          <h1>Điều phối đội xe</h1>
+          <p class="muted">Dữ liệu mẫu được tải từ API Node.js.</p>
+        </div>
+        <button id="refresh-button" type="button">Làm mới</button>
+      </header>
+
+      <p id="connection-status" class="notice" role="status">Đang kết nối server…</p>
+
+      <section class="layout" aria-label="Thông tin đội xe">
+        <article class="panel">
+          <div class="panel-header">
+            <div>
+              <h2>Phương tiện</h2>
+              <p id="vehicle-count" class="muted">—</p>
+            </div>
+            <input id="vehicle-search" type="search" placeholder="Tìm mã xe hoặc biển số" aria-label="Tìm xe">
+          </div>
+          <div id="vehicle-list" class="vehicle-list" aria-live="polite"></div>
+        </article>
+
+        <article class="panel">
+          <h2>Chi tiết xe</h2>
+          <div id="vehicle-details" class="details muted">Chọn một phương tiện để xem thông tin.</div>
+          <h3>Chuyến gần đây</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Mã chuyến</th><th>Điểm đi → Điểm đến</th><th>Thời gian</th><th>Khoảng cách</th><th>Trạng thái</th></tr>
+              </thead>
+              <tbody id="trip-list">
+                <tr><td class="empty" colspan="5">Chọn một xe để xem chuyến.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <footer id="last-updated" class="muted">Chưa đồng bộ dữ liệu.</footer>
+    </main>
+  </body>
+</html>

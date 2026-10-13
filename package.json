@@ -1,0 +1,13 @@
+{
+  "name": "et4711-fleet-premvp-starter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bo khung PreMVP web dieu phoi phuong tien cho hoc phan ET4711",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
