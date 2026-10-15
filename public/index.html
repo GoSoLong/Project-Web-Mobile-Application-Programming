@@ -3,54 +3,179 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Bo khung dashboard PreMVP dieu phoi va theo doi doi xe.">
-    <title>Fleet PreMVP — Điều phối đội xe</title>
+    <meta name="theme-color" content="#f4f7fb">
+    <meta name="description" content="Dashboard điều phối theo dõi trạng thái và vị trí đội xe.">
+    <title>FleetWatch — Điều phối đội xe</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
     <link rel="stylesheet" href="/styles.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin="" defer></script>
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <main class="page">
-      <header class="page-header">
-        <div>
-          <p class="eyebrow">ET4711 · BẢN NỀN PREMVP</p>
-          <h1>Điều phối đội xe</h1>
-          <p class="muted">Dữ liệu mẫu được tải từ API Node.js.</p>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="FleetWatch - Trang chủ">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32"><path d="M5 19.5 7.2 12a2.5 2.5 0 0 1 2.4-1.8h12.8a2.5 2.5 0 0 1 2.4 1.8l2.2 7.5v6a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5V24H9v1.5A1.5 1.5 0 0 1 7.5 27h-1A1.5 1.5 0 0 1 5 25.5zM8 18h16l-1.5-5H9.5zM10 21a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm12 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
+          </span>
+          <span><strong>fleetwatch</strong><small>FLEET OPERATIONS</small></span>
+        </a>
+
+        <div class="sidebar-label">KHÔNG GIAN LÀM VIỆC</div>
+        <div class="workspace-switch">
+          <span class="workspace-avatar">AT</span>
+          <span class="workspace-copy"><strong>An Tín Logistics</strong><small>Điều phối đội xe</small></span>
+          <span class="chevron" aria-hidden="true">⌄</span>
         </div>
-        <button id="refresh-button" type="button">Làm mới</button>
-      </header>
 
-      <p id="connection-status" class="notice" role="status">Đang kết nối server…</p>
+        <div class="sidebar-label nav-label">TỔNG QUAN</div>
+        <nav aria-label="Điều hướng chính">
+          <a class="nav-link active" href="#overview" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">▦</span> Bản đồ giám sát
+          </a>
+          <a class="nav-link" href="#vehicles">
+            <span class="nav-icon vehicle-icon" aria-hidden="true">▰</span> Phương tiện
+            <span class="nav-count" id="nav-vehicle-count">—</span>
+          </a>
+          <a class="nav-link" href="#trips">
+            <span class="nav-icon" aria-hidden="true">◷</span> Chuyến gần đây
+          </a>
+        </nav>
 
-      <section class="layout" aria-label="Thông tin đội xe">
-        <article class="panel">
-          <div class="panel-header">
+        <div class="sidebar-note">
+          <span class="note-icon" aria-hidden="true">i</span>
+          <p><strong>Bản Web PreMVP cho điều phối viên</strong><br>Dữ liệu hành trình được mô phỏng để trình diễn giao diện điều phối.</p>
+        </div>
+
+        <div class="sidebar-profile">
+          <div class="profile-avatar">ĐP</div>
+          <div class="profile-copy"><strong>Điều phối viên</strong><small>Đội vận hành</small></div>
+          <button class="icon-button profile-menu" aria-label="Tùy chọn tài khoản" type="button">···</button>
+        </div>
+      </aside>
+
+      <main class="main-content" id="overview">
+        <header class="topbar">
+          <div class="breadcrumb"><span>Không gian làm việc</span><span class="crumb-separator">/</span><strong>Giám sát đội xe</strong></div>
+          <div class="topbar-actions">
+            <span class="demo-pill"><span></span> MÔI TRƯỜNG DEMO</span>
+            <button class="icon-button notification-button" aria-label="Thông báo" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>
+              <i></i>
+            </button>
+            <div class="topbar-avatar">ĐP</div>
+          </div>
+        </header>
+
+        <div class="page-content">
+          <section class="page-heading">
             <div>
-              <h2>Phương tiện</h2>
-              <p id="vehicle-count" class="muted">—</p>
+              <div class="eyebrow"><span class="live-dot"></span> THEO DÕI TRỰC QUAN</div>
+              <h1>Giám sát đội xe</h1>
+              <p class="page-description">Tổng quan vị trí và trạng thái phương tiện trên toàn hệ thống.</p>
             </div>
-            <input id="vehicle-search" type="search" placeholder="Tìm mã xe hoặc biển số" aria-label="Tìm xe">
-          </div>
-          <div id="vehicle-list" class="vehicle-list" aria-live="polite"></div>
-        </article>
+            <div class="heading-meta">
+              <span class="today-label">HÔM NAY</span>
+              <strong id="today-date">—</strong>
+            </div>
+          </section>
 
-        <article class="panel">
-          <h2>Chi tiết xe</h2>
-          <div id="vehicle-details" class="details muted">Chọn một phương tiện để xem thông tin.</div>
-          <h3>Chuyến gần đây</h3>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr><th>Mã chuyến</th><th>Điểm đi → Điểm đến</th><th>Thời gian</th><th>Khoảng cách</th><th>Trạng thái</th></tr>
-              </thead>
-              <tbody id="trip-list">
-                <tr><td class="empty" colspan="5">Chọn một xe để xem chuyến.</td></tr>
-              </tbody>
-            </table>
+          <div class="alert-banner" role="note">
+            <span class="alert-icon" aria-hidden="true">↗</span>
+            <span><strong>Chế độ mô phỏng</strong> — vị trí xe tự cập nhật theo dữ liệu mẫu từ server, không phải GPS trực tiếp.</span>
+            <span class="simulation-status"><i></i> Đang phát dữ liệu</span>
           </div>
-        </article>
-      </section>
 
-      <footer id="last-updated" class="muted">Chưa đồng bộ dữ liệu.</footer>
-    </main>
+          <section class="stat-grid" aria-label="Tổng quan phương tiện">
+            <article class="stat-card">
+              <div class="stat-top"><span>Tổng phương tiện</span><span class="stat-icon blue">▰</span></div>
+              <div class="stat-value" id="stat-total">—</div>
+              <div class="stat-foot">Trong đội xe</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span>Đang có chuyến</span><span class="stat-icon green">↗</span></div>
+              <div class="stat-value" id="stat-moving">—</div>
+              <div class="stat-foot"><span class="status-dot green-dot"></span> Đang di chuyển</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span>Đang dừng</span><span class="stat-icon amber">Ⅱ</span></div>
+              <div class="stat-value" id="stat-idle">—</div>
+              <div class="stat-foot">Sẵn sàng nhận chuyến</div>
+            </article>
+            <article class="stat-card">
+              <div class="stat-top"><span>Mất tín hiệu</span><span class="stat-icon red">⌁</span></div>
+              <div class="stat-value" id="stat-offline">—</div>
+              <div class="stat-foot">Chưa có vị trí gần đây</div>
+            </article>
+          </section>
+
+          <section class="monitor-grid">
+            <article class="panel map-panel">
+              <div class="panel-header map-header">
+                <div>
+                  <div class="panel-title-row"><h2>Bản đồ phương tiện</h2><span class="live-badge"><i></i> LIVE</span></div>
+                  <p class="panel-subtitle">Vị trí cập nhật từ dữ liệu mô phỏng</p>
+                  <p class="route-status" id="route-status" role="status">Đang lấy tuyến đường…</p>
+                </div>
+                <button class="subtle-button" id="refresh-button" type="button">
+                  <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16.3 8A6.5 6.5 0 0 0 4.5 6L3 7.5M3 4v3.5h3.5M3.7 12a6.5 6.5 0 0 0 11.8 2L17 12.5m0 3.5v-3.5h-3.5"/></svg>
+                  Làm mới
+                </button>
+              </div>
+              <div class="map-canvas" id="map-canvas" aria-label="Bản đồ vị trí phương tiện tại Hà Nội">
+                <div id="leaflet-map" role="application" aria-label="Bản đồ đường phố OpenStreetMap tại Hà Nội"></div>
+                <div class="map-status" id="map-status" role="status" hidden></div>
+              </div>
+              <div class="map-legend">
+                <span><i class="legend-dot moving"></i> Đang có chuyến</span>
+                <span><i class="legend-dot idle"></i> Đang dừng</span>
+                <span><i class="legend-dot offline"></i> Mất tín hiệu</span>
+                <span><i class="destination-legend-icon"></i> Đích xe đang theo dõi</span>
+                <span class="map-updated" id="map-updated">Đang tải dữ liệu…</span>
+              </div>
+            </article>
+
+            <aside class="panel vehicle-panel" id="vehicles">
+              <div class="panel-header vehicle-panel-header">
+                <div><h2>Phương tiện</h2><p class="panel-subtitle"><span id="vehicle-count">0</span> xe trong đội</p></div>
+                <button class="icon-button more-button" aria-label="Tùy chọn danh sách" type="button">···</button>
+              </div>
+              <label class="search-box">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.7" cy="8.7" r="5.8"/><path d="m13 13 4 4"/></svg>
+                <input id="vehicle-search" type="search" placeholder="Tìm xe, tài xế..." autocomplete="off">
+                <kbd>⌘ K</kbd>
+              </label>
+              <div class="filter-row" role="group" aria-label="Lọc phương tiện">
+                <button class="filter-chip selected" data-filter="all" type="button">Tất cả <span id="filter-all">0</span></button>
+                <button class="filter-chip" data-filter="in_trip" type="button">Đang chạy <span id="filter-moving">0</span></button>
+                <button class="filter-chip" data-filter="idle" type="button">Đang dừng <span id="filter-idle">0</span></button>
+              </div>
+              <div class="vehicle-list" id="vehicle-list" aria-live="polite"></div>
+              <div class="vehicle-panel-footer"><span class="footer-pulse"></span><span id="footer-update">Đang kết nối server…</span></div>
+            </aside>
+          </section>
+
+          <section class="panel trips-panel" id="trips">
+            <div class="panel-header trips-header">
+              <div><h2>Chuyến gần đây</h2><p class="panel-subtitle" id="trips-subtitle">Chọn một phương tiện để xem hoạt động</p></div>
+              <button class="text-button" id="view-all-trips" type="button">Xem phương tiện đang chọn <span aria-hidden="true">→</span></button>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>MÃ CHUYẾN</th><th>PHƯƠNG TIỆN</th><th>TÀI XẾ</th><th>ĐIỂM ĐI</th><th>ĐIỂM ĐẾN</th><th>QUÃNG ĐƯỜNG</th><th>THỜI GIAN</th><th>TRẠNG THÁI</th></tr></thead>
+                <tbody id="trip-list"><tr><td class="empty-table" colspan="8">Đang tải dữ liệu chuyến…</td></tr></tbody>
+              </table>
+            </div>
+            <div class="trip-pagination"><span id="trip-count">—</span><div><button aria-label="Trang trước" disabled type="button">‹</button><button aria-label="Trang tiếp" disabled type="button">›</button></div></div>
+          </section>
+
+          <footer class="page-footer">
+            <span>FleetWatch <span class="footer-separator">·</span> PreMVP ET4711</span>
+            <span>Dashboard chỉ giám sát <span class="footer-separator">·</span> Chuyến do tài xế khởi tạo trên ứng dụng ở phiên bản sau</span>
+          </footer>
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>
 </html>
