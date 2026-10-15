@@ -15,18 +15,31 @@ const STATUS_LABELS = {
 const state = {
   vehicles: [],
   selectedId: null,
+  trackingVehicleId: null,
+  selectedTripRoute: null,
+  tripRoutes: new Map(),
   filter: "all",
   search: "",
   map: null,
   markers: new Map(), // Lưu trữ Leaflet Markers theo vehicle.id
+  destinationMarkers: new Map(),
+  tripOriginMarker: null,
+  tripDestinationMarker: null,
+  routeLayer: null,
+  hasFittedInitialRoutes: false,
   requestVersion: 0,
 };
 
 const elements = {
   vehicleList: document.querySelector("#vehicle-list"),
+  tripList: document.querySelector("#trip-list"),
   vehicleDetails: document.querySelector("#vehicle-details"),
   vehicleSearch: document.querySelector("#vehicle-search"),
   vehicleCount: document.querySelector("#vehicle-count"),
+  tripCount: document.querySelector("#trip-count"),
+  tripsSubtitle: document.querySelector("#trips-subtitle"),
+  routeStatus: document.querySelector("#route-status"),
+  viewAllTrips: document.querySelector("#view-all-trips"),
   refreshBtn: document.querySelector("#refresh-button"),
   mapUpdated: document.querySelector("#map-updated"),
   footerUpdate: document.querySelector("#footer-update"),
@@ -100,6 +113,48 @@ function showToast(message, isSuccess = false) {
   }, 3200);
 }
 
+function setMapStatus(message) {
+  if (!elements.mapStatus) return;
+  elements.mapStatus.textContent = message;
+  elements.mapStatus.hidden = !message;
+}
+
+function updateRouteStatus(vehicle, trip = null) {
+  if (!elements.routeStatus) return;
+  if (trip) {
+    if (trip.routeStatus === "ready") {
+      const distanceKm = new Intl.NumberFormat("vi-VN", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(trip.routeDistanceMeters / 1000);
+      elements.routeStatus.textContent = `Chuyến ${trip.id} · Tuyến đường bộ · ${distanceKm} km`;
+      elements.routeStatus.classList.remove("route-error");
+    } else {
+      elements.routeStatus.textContent = `Không tải được tuyến chuyến ${trip.id}`;
+      elements.routeStatus.classList.add("route-error");
+    }
+  } else if (!vehicle) {
+    elements.routeStatus.textContent = "Chọn marker xe để theo dõi tuyến và điểm đến";
+    elements.routeStatus.classList.remove("route-error");
+  } else if (vehicle.routeStatus === "ready") {
+    const distanceKm = new Intl.NumberFormat("vi-VN", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    }).format(vehicle.routeDistanceMeters / 1000);
+    elements.routeStatus.textContent = `Tuyến đường bộ · ${distanceKm} km`;
+    elements.routeStatus.classList.remove("route-error");
+  } else if (vehicle.routeStatus === "unavailable") {
+    elements.routeStatus.textContent = "Không lấy được tuyến đường bộ";
+    elements.routeStatus.classList.add("route-error");
+  } else if (vehicle.routeStatus === "loading") {
+    elements.routeStatus.textContent = "Đang lấy tuyến đường bộ…";
+    elements.routeStatus.classList.remove("route-error");
+  } else {
+    elements.routeStatus.textContent = "Xe không có chuyến đang chạy";
+    elements.routeStatus.classList.remove("route-error");
+  }
+}
+
 // -----------------------------------------------------------------
 // 2. KHỞI TẠO VÀ XỬ LÝ BẢN ĐỒ LEAFLET (MAP HANDLING)
 // -----------------------------------------------------------------
@@ -124,61 +179,179 @@ function initializeMap() {
 
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
-  }).addTo(state.map);
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>',
+  })
+    .on("tileerror", () => setMapStatus("Không tải được một số ô bản đồ. Kiểm tra Internet hoặc thử làm mới trang."))
+    .on("tileload", () => setMapStatus(""))
+    .addTo(state.map);
 
   window.setTimeout(() => {
     if (state.map) state.map.invalidateSize();
   }, 100);
 }
 
+function destinationIcon() {
+  return L.divIcon({
+    className: "destination-icon-container",
+    html: '<svg class="destination-pin" viewBox="0 0 32 40" role="img" aria-label="Điểm đến"><path d="M16 1C7.72 1 1 7.72 1 16c0 10.5 15 23 15 23s15-12.5 15-23C31 7.72 24.28 1 16 1Z" fill="#e53935" stroke="#fff" stroke-width="2"/><circle cx="16" cy="16" r="5.3" fill="#fff"/></svg>',
+    iconSize: [32, 40],
+    iconAnchor: [16, 39],
+    tooltipAnchor: [0, -34],
+  });
+}
+
 function renderMap() {
+  const trackedVehicle = state.vehicles.find((vehicle) => vehicle.id === state.trackingVehicleId) || null;
+  const selectedTrip = state.selectedTripRoute;
+  updateRouteStatus(trackedVehicle, selectedTrip);
   if (!state.map) return;
 
   const activeIds = new Set();
+  const activeDestinationIds = new Set();
 
   state.vehicles.forEach((vehicle) => {
-    if (!vehicle.location) return;
+    if (vehicle.location) {
+      activeIds.add(vehicle.id);
+      const position = [vehicle.location.latitude, vehicle.location.longitude];
+      const isSelected = vehicle.id === state.selectedId;
+      const markerColor = vehicle.status === "in_trip"
+        ? "#3980e2"
+        : vehicle.status === "idle" ? "#e2a344" : "#9ba6b5";
 
-    activeIds.add(vehicle.id);
-    const pos = [vehicle.location.latitude, vehicle.location.longitude];
-    const isSelected = vehicle.id === state.selectedId;
-
-    const markerColor = vehicle.status === "in_trip" ? "#3980e2" : (vehicle.status === "idle" ? "#e2a344" : "#9ba6b5");
-
-    let marker = state.markers.get(vehicle.id);
-    if (!marker) {
-      marker = L.circleMarker(pos, {
-        radius: isSelected ? 10 : 7,
-        fillColor: markerColor,
-        color: "#ffffff",
-        weight: isSelected ? 3 : 2,
-        fillOpacity: 1,
-      })
-        .bindTooltip(`<strong>${escapeHtml(vehicle.plate)}</strong> (${escapeHtml(vehicle.id)})`, {
-          direction: "top",
-          offset: [0, -8],
-          className: "leaflet-vehicle-label",
+      let marker = state.markers.get(vehicle.id);
+      if (!marker) {
+        marker = L.circleMarker(position, {
+          radius: isSelected ? 10 : 7,
+          fillColor: markerColor,
+          color: "#ffffff",
+          weight: isSelected ? 3 : 2,
+          fillOpacity: 1,
         })
-        .on("click", () => selectVehicle(vehicle.id))
-        .addTo(state.map);
+          .bindTooltip(`<strong>${escapeHtml(vehicle.plate)}</strong> (${escapeHtml(vehicle.id)})`, {
+            direction: "top",
+            offset: [0, -8],
+            className: "leaflet-vehicle-label",
+          })
+          .on("click", () => selectVehicle(vehicle.id, { trackRoute: true }))
+          .addTo(state.map);
 
-      state.markers.set(vehicle.id, marker);
-    } else {
-      marker.setLatLng(pos);
-      marker.setStyle({
-        radius: isSelected ? 10 : 7,
-        fillColor: markerColor,
-        weight: isSelected ? 3 : 2,
-      });
+        state.markers.set(vehicle.id, marker);
+      } else {
+        marker.setLatLng(position);
+        marker.setStyle({
+          radius: isSelected ? 10 : 7,
+          fillColor: markerColor,
+          weight: isSelected ? 3 : 2,
+        });
+      }
+    }
+
+    if (vehicle.id === state.trackingVehicleId && vehicle.status === "in_trip" && vehicle.destination) {
+      activeDestinationIds.add(vehicle.id);
+      const destinationPosition = [vehicle.destination.latitude, vehicle.destination.longitude];
+      const destinationLabel = `${vehicle.plate} · Điểm đến: ${vehicle.destination.name}`;
+      let destinationMarker = state.destinationMarkers.get(vehicle.id);
+      if (!destinationMarker) {
+        destinationMarker = L.marker(destinationPosition, {
+          icon: destinationIcon(),
+          keyboard: true,
+          zIndexOffset: 1000,
+          title: destinationLabel,
+        })
+          .bindTooltip(escapeHtml(destinationLabel), {
+            direction: "top",
+            className: "destination-tooltip",
+          })
+          .on("click", () => selectVehicle(vehicle.id, { trackRoute: true }))
+          .addTo(state.map);
+        state.destinationMarkers.set(vehicle.id, destinationMarker);
+      } else {
+        destinationMarker.setLatLng(destinationPosition);
+        destinationMarker.options.title = destinationLabel;
+        destinationMarker.setTooltipContent(escapeHtml(destinationLabel));
+      }
     }
   });
 
-  // Xóa Marker của xe không còn tồn tại trong danh sách
-  for (const [id, marker] of state.markers) {
-    if (!activeIds.has(id)) {
+  for (const [vehicleId, marker] of state.markers) {
+    if (!activeIds.has(vehicleId)) {
       marker.remove();
-      state.markers.delete(id);
+      state.markers.delete(vehicleId);
+    }
+  }
+
+  for (const [vehicleId, marker] of state.destinationMarkers) {
+    if (!activeDestinationIds.has(vehicleId)) {
+      marker.remove();
+      state.destinationMarkers.delete(vehicleId);
+    }
+  }
+
+  if (selectedTrip) {
+    const origin = selectedTrip.originCoordinates;
+    const destination = selectedTrip.destinationCoordinates;
+    if (origin) {
+      if (!state.tripOriginMarker) {
+        state.tripOriginMarker = L.circleMarker([origin.latitude, origin.longitude], {
+          radius: 7,
+          color: "#fff",
+          weight: 2,
+          fillColor: "#2baa7a",
+          fillOpacity: 1,
+        }).addTo(state.map);
+      } else {
+        state.tripOriginMarker.setLatLng([origin.latitude, origin.longitude]);
+      }
+      state.tripOriginMarker.bindTooltip(`Điểm đi: ${escapeHtml(selectedTrip.origin)}`);
+    }
+    if (destination) {
+      if (!state.tripDestinationMarker) {
+        state.tripDestinationMarker = L.marker([destination.latitude, destination.longitude], {
+          icon: destinationIcon(),
+          keyboard: true,
+          zIndexOffset: 1000,
+        }).addTo(state.map);
+      } else {
+        state.tripDestinationMarker.setLatLng([destination.latitude, destination.longitude]);
+      }
+      state.tripDestinationMarker.bindTooltip(`Điểm đến: ${escapeHtml(selectedTrip.destination)}`, {
+        direction: "top",
+        className: "destination-tooltip",
+      });
+    }
+  } else {
+    state.tripOriginMarker?.remove();
+    state.tripDestinationMarker?.remove();
+    state.tripOriginMarker = null;
+    state.tripDestinationMarker = null;
+  }
+
+  state.routeLayer?.remove();
+  const routePoints = selectedTrip
+    ? selectedTrip.routeStatus === "ready" ? selectedTrip.route : []
+    : trackedVehicle?.routeStatus === "ready" ? trackedVehicle.route : [];
+  if (routePoints.length > 1) {
+    state.routeLayer = L.polyline(
+      routePoints.map((point) => [point.latitude, point.longitude]),
+      {
+        color: "#3678e5",
+        weight: 4,
+        opacity: 0.8,
+        dashArray: "7 7",
+        lineCap: "round",
+      },
+    ).addTo(state.map);
+  } else {
+    state.routeLayer = null;
+  }
+
+  if (!state.hasFittedInitialRoutes) {
+    const routes = state.vehicles
+      .filter((vehicle) => vehicle.routeStatus === "ready" && vehicle.route.length > 1)
+      .flatMap((vehicle) => vehicle.route.map((point) => [point.latitude, point.longitude]));
+    if (routes.length) {
+      state.map.fitBounds(L.latLngBounds(routes), { padding: [20, 20], maxZoom: 13 });
+      state.hasFittedInitialRoutes = true;
     }
   }
 }
@@ -238,6 +411,28 @@ function renderVehicleList() {
   `).join("");
 }
 
+function renderStats() {
+  const counts = state.vehicles.reduce((result, vehicle) => {
+    result[vehicle.status] = (result[vehicle.status] || 0) + 1;
+    return result;
+  }, {});
+
+  const values = {
+    "#stat-total": state.vehicles.length,
+    "#stat-moving": counts.in_trip || 0,
+    "#stat-idle": counts.idle || 0,
+    "#stat-offline": counts.no_signal || 0,
+    "#nav-vehicle-count": state.vehicles.length,
+    "#filter-all": state.vehicles.length,
+    "#filter-moving": counts.in_trip || 0,
+    "#filter-idle": counts.idle || 0,
+  };
+  for (const [selector, value] of Object.entries(values)) {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = new Intl.NumberFormat("vi-VN").format(value);
+  }
+}
+
 function renderVehicleDetails(vehicle) {
   if (!elements.vehicleDetails) return;
 
@@ -273,6 +468,81 @@ function renderVehicleDetails(vehicle) {
   `;
 }
 
+function renderTrips(trips, vehicle) {
+  if (!elements.tripList) return;
+  if (!trips.length) {
+    elements.tripList.innerHTML = '<tr><td class="empty-table" colspan="8">Phương tiện chưa có chuyến gần đây.</td></tr>';
+    if (elements.tripCount) elements.tripCount.textContent = "0 chuyến";
+    return;
+  }
+
+  elements.tripList.innerHTML = trips.map((trip) => {
+    const selected = state.selectedTripRoute?.id === trip.id
+      && state.selectedTripRoute?.vehicleId === vehicle.id;
+    const distance = trip.routeStatus === "ready" && Number.isFinite(trip.routeDistanceMeters)
+      ? `${new Intl.NumberFormat("vi-VN", {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1,
+      }).format(trip.routeDistanceMeters / 1000)} km`
+      : "Không khả dụng";
+    const time = `${trip.startedAt || "Chưa rõ"}${trip.endedAt ? ` – ${trip.endedAt}` : ""}`;
+
+    return `
+      <tr class="trip-row${selected ? " selected" : ""}" tabindex="0"
+          data-trip-id="${escapeHtml(trip.id)}" aria-selected="${selected}">
+        <td>${escapeHtml(trip.id)}</td>
+        <td><span class="table-vehicle"><span class="table-vehicle-icon">${vehicleSvgIcon()}</span>${escapeHtml(vehicle.plate)}</span></td>
+        <td>${escapeHtml(vehicle.driver || "Chưa phân công")}</td>
+        <td>${escapeHtml(trip.origin || "Chưa rõ")}</td>
+        <td>${escapeHtml(trip.destination || "Chưa rõ")}</td>
+        <td>${distance}</td>
+        <td>${escapeHtml(time)}</td>
+        <td><span class="trip-status${trip.status === "Hoàn thành" ? " complete" : ""}">${escapeHtml(trip.status || "Không rõ")}</span></td>
+      </tr>
+    `;
+  }).join("");
+  if (elements.tripCount) elements.tripCount.textContent = `${trips.length} chuyến gần đây`;
+}
+
+async function loadTrips(vehicle, { silent = false } = {}) {
+  if (!elements.tripList) return;
+  if (!vehicle) {
+    elements.tripList.innerHTML = '<tr><td class="empty-table" colspan="8">Chưa có phương tiện được chọn.</td></tr>';
+    if (elements.tripsSubtitle) elements.tripsSubtitle.textContent = "Chọn một phương tiện để xem hoạt động";
+    if (elements.tripCount) elements.tripCount.textContent = "Chưa có dữ liệu";
+    state.tripRoutes.clear();
+    state.selectedTripRoute = null;
+    renderMap();
+    return;
+  }
+
+  const version = ++state.requestVersion;
+  if (elements.tripsSubtitle) {
+    elements.tripsSubtitle.textContent = `${vehicle.plate} · ${vehicle.name || vehicle.id}`;
+  }
+  elements.tripList.innerHTML = '<tr><td class="empty-table" colspan="8">Đang tải chuyến…</td></tr>';
+  try {
+    const response = await fetch(`/api/vehicles/${encodeURIComponent(vehicle.id)}/trips`);
+    if (!response.ok) throw new Error(`Máy chủ trả về lỗi ${response.status}.`);
+    const result = await response.json();
+    if (!Array.isArray(result.data)) throw new Error("Dữ liệu chuyến không hợp lệ.");
+    if (version !== state.requestVersion || vehicle.id !== state.selectedId) return;
+
+    state.tripRoutes = new Map(result.data.map((trip) => [trip.id, trip]));
+    state.selectedTripRoute = state.selectedTripRoute?.vehicleId === vehicle.id
+      ? state.tripRoutes.get(state.selectedTripRoute.id) || null
+      : null;
+    if (state.selectedTripRoute) state.selectedTripRoute.vehicleId = vehicle.id;
+    renderTrips(result.data, vehicle);
+    renderMap();
+  } catch (error) {
+    if (version !== state.requestVersion) return;
+    elements.tripList.innerHTML = '<tr><td class="empty-table" colspan="8">Không thể tải chuyến. Vui lòng thử làm mới.</td></tr>';
+    if (elements.tripCount) elements.tripCount.textContent = "Lỗi tải dữ liệu";
+    if (!silent) showToast(`Không thể tải lịch sử chuyến: ${error.message}`);
+  }
+}
+
 function updateStatusTimestamps(generatedAt) {
   const formattedTime = new Intl.DateTimeFormat("vi-VN", {
     hour: "2-digit",
@@ -287,8 +557,24 @@ function updateStatusTimestamps(generatedAt) {
 // -----------------------------------------------------------------
 // 4. XỬ LÝ CHỌN XE & GỌI API (API CALLS & SELECTION)
 // -----------------------------------------------------------------
-async function selectVehicle(vehicleId) {
+function focusVehicleLocation(vehicle, { trackRoute = false } = {}) {
+  if (!state.map || !vehicle) return;
+  if (trackRoute && vehicle.routeStatus === "ready" && vehicle.route.length > 1) {
+    const points = vehicle.route.map((point) => [point.latitude, point.longitude]);
+    state.map.fitBounds(L.latLngBounds(points), { padding: [24, 24], maxZoom: 14 });
+  } else if (vehicle.location) {
+    state.map.panTo([vehicle.location.latitude, vehicle.location.longitude], {
+      animate: true,
+      duration: 0.5,
+    });
+  }
+}
+
+function selectVehicle(vehicleId, { trackRoute = false } = {}) {
+  if (!state.vehicles.some((vehicle) => vehicle.id === vehicleId)) return;
   state.selectedId = vehicleId;
+  state.trackingVehicleId = trackRoute ? vehicleId : null;
+  state.selectedTripRoute = null;
   const vehicle = getSelectedVehicle();
 
   renderVehicleList();
@@ -296,13 +582,12 @@ async function selectVehicle(vehicleId) {
   renderMap();
 
   if (vehicle) {
-    focusVehicleLocation(vehicle);
-    
+    focusVehicleLocation(vehicle, { trackRoute });
     // Gọi API lấy thông tin chi tiết xe (/api/vehicles/:id)
     fetchVehicleDetail(vehicleId);
-    
     // Gọi API lấy riêng vị trí mới nhất (/api/vehicles/:id/location/latest)
     fetchLatestLocation(vehicleId);
+    loadTrips(vehicle);
   }
 }
 
@@ -362,19 +647,45 @@ async function loadVehicles({ silent = false, showSuccess = false } = {}) {
     if (!state.selectedId && state.vehicles.length > 0) {
       state.selectedId = state.vehicles[0].id;
     }
+    if (!state.vehicles.some((vehicle) => vehicle.id === state.trackingVehicleId)) {
+      state.trackingVehicleId = null;
+    }
 
+    renderStats();
     renderVehicleList();
     renderVehicleDetails(getSelectedVehicle());
     renderMap();
     updateStatusTimestamps(result.generatedAt);
+    await loadTrips(getSelectedVehicle(), { silent });
 
     if (showSuccess) showToast("Đã đồng bộ dữ liệu vị trí mới nhất.", true);
   } catch (error) {
     if (elements.footerUpdate) elements.footerUpdate.textContent = "Không thể kết nối máy chủ";
     if (!silent) showToast(`Không thể tải dữ liệu: ${error.message}`);
   } finally {
-    if (elements.refreshBtn) elements.refreshBtn.disabled = false;
+    if (elements.refreshBtn && !silent) elements.refreshBtn.disabled = false;
   }
+}
+
+function selectTripRoute(row) {
+  const trip = state.tripRoutes.get(row.dataset.tripId);
+  const vehicle = getSelectedVehicle();
+  if (!trip || !vehicle) return;
+
+  state.trackingVehicleId = null;
+  state.selectedTripRoute = { ...trip, vehicleId: vehicle.id };
+  renderVehicleList();
+  renderMap();
+
+  if (state.map && trip.routeStatus === "ready" && trip.route.length > 1) {
+    const points = trip.route.map((point) => [point.latitude, point.longitude]);
+    state.map.fitBounds(L.latLngBounds(points), { padding: [32, 32], maxZoom: 14 });
+  }
+  elements.tripList.querySelectorAll(".trip-row").forEach((tripRow) => {
+    const selected = tripRow === row;
+    tripRow.classList.toggle("selected", selected);
+    tripRow.setAttribute("aria-selected", String(selected));
+  });
 }
 
 // -----------------------------------------------------------------
@@ -384,6 +695,27 @@ if (elements.vehicleList) {
   elements.vehicleList.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-vehicle-id]");
     if (btn) selectVehicle(btn.dataset.vehicleId);
+  });
+}
+
+if (elements.tripList) {
+  elements.tripList.addEventListener("click", (event) => {
+    const row = event.target.closest("[data-trip-id]");
+    if (row) selectTripRoute(row);
+  });
+
+  elements.tripList.addEventListener("keydown", (event) => {
+    const row = event.target.closest("[data-trip-id]");
+    if (row && (event.key === "Enter" || event.key === " ")) {
+      event.preventDefault();
+      selectTripRoute(row);
+    }
+  });
+}
+
+if (elements.viewAllTrips) {
+  elements.viewAllTrips.addEventListener("click", () => {
+    document.querySelector("#trips")?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
