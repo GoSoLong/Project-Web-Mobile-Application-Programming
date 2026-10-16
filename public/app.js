@@ -28,6 +28,8 @@ const state = {
   routeLayer: null,
   hasFittedInitialRoutes: false,
   requestVersion: 0,
+  destinationMarkers: new Map(),
+  tripDestinationMarker: null,
 };
 
 const elements = {
