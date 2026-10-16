@@ -21,6 +21,7 @@ const state = {
   markers: new Map(), // Lưu trữ Leaflet Markers theo vehicle.id
   requestVersion: 0,
   destinationMarkers: new Map(),
+  tripDestinationMarker: null,
 };
 
 const elements = {
