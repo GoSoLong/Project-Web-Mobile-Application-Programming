@@ -28,6 +28,7 @@ const state = {
   routeLayer: null,
   hasFittedInitialRoutes: false,
   requestVersion: 0,
+  destinationMarkers: new Map(),
 };
 
 const elements = {
