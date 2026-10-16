@@ -20,6 +20,7 @@ const state = {
   map: null,
   markers: new Map(), // Lưu trữ Leaflet Markers theo vehicle.id
   requestVersion: 0,
+  destinationMarkers: new Map(),
 };
 
 const elements = {
