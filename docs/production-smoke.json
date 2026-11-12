@@ -1,0 +1,15 @@
+{
+  "source": "production dist served by vite preview",
+  "visited": [
+    "overview",
+    "live",
+    "history",
+    "sharing",
+    "analytics",
+    "notifications",
+    "settings"
+  ],
+  "pageErrors": [],
+  "status": "PASS",
+  "at": "2026-11-12T16:52:57.815Z"
+}
